@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>X-Toys Tasmota Bridge</title>
+  <body>
+    <div id="root">
+
+        <p>Keep this window open.</p>
+        <fieldset>
+            <legend>Configuration</legend>
+            <label for="websocketInput"> <input type="text" aria-autocomplete="none" id="websocketInput" placeholder="From xtoys custom toy config."></label><br/>
+            <label for="tokenInput"> <input type="text" aria-autocomplete="none" id="tokenInput" placeholder="From xtoys custom toy config." ></label><br/>
+            <label for="tasmotaIpInput"><input type="text" aria-autocomplete="none" id="tasmotaIpInput" placeholder="eg. 192.168.0.12"></label><br/>
+        </fieldset>
+
+    </div>
+
+    <script>
+
+        let {websocket, token, tasmotaIp} = JSON.parse(window.localStorage.getItem('config') || '{}');
+
+        document.getElementById('websocketInput').value = websocket || '';
+        document.getElementById('tokenInput').value = token || '';
+        document.getElementById('tasmotaIpInput').value = tasmotaIp || '';
+
+        document.getElementById('websocketInput').addEventListener('change', (e) => {
+            websocket = e.target.value;
+            onConfigurationChange();
+        });
+        document.getElementById('tokenInput').addEventListener('change', (e) => {
+            token = e.target.value;
+            onConfigurationChange();
+        });
+        document.getElementById('tasmotaIpInput').addEventListener('change', (e) => {
+            tasmotaIp = e.target.value;
+            onConfigurationChange();
+        });
+
+        /** @type {WebSocket} **/
+        let socket = undefined;
+
+        onConfigurationChange();
+
+        async function onConfigurationChange() {
+
+            window.localStorage.setItem('config', JSON.stringify({ websocket, token, tasmotaIp }))
+
+            if (socket !== undefined) {
+                socket.close();
+                socket = undefined;
+            }
+            socket = new WebSocket(`wss://webhook.xtoys.app/${websocket}?token=${token}`);
+
+            socket.addEventListener('message',(msg) => {
+                const data = JSON.parse(msg.data);
+                onMessage(data);
+            });
+        }
+
+
+
+        async function onMessage(data) {
+            console.info(data);
+            if (data.errorCode) {
+                throw new Error(`${data.error} (${data.errorCode}): ${data.errorMessage}`);
+            }
+            callTasmota();
+        }
+
+        async function callTasmota() {
+            const r = await fetch(`http://${tasmotaIp}/cm?cmnd=Power%20TOGGLE`, { method: 'GET', mode: 'no-cors', credentials: 'omit', cache: "no-cache", referrerPolicy: 'no-referrer'});
+
+        }
+
+
+
+    </script>
+  </body>
+</html>
