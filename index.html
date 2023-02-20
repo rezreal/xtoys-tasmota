@@ -6,23 +6,33 @@
   <body>
     <div id="root">
 
-        <p>Keep this window open.</p>
+        <p id="wakeLockStatus"></p>
+        <p>Do not close this tab! You may switch back to xtoys now.</p>
         <fieldset>
-            <legend>Configuration</legend>
-            <label for="websocketInput"> <input type="text" aria-autocomplete="none" id="websocketInput" placeholder="From xtoys custom toy config."></label><br/>
-            <label for="tokenInput"> <input type="text" aria-autocomplete="none" id="tokenInput" placeholder="From xtoys custom toy config." ></label><br/>
-            <label for="tasmotaIpInput"><input type="text" aria-autocomplete="none" id="tasmotaIpInput" placeholder="eg. 192.168.0.12"></label><br/>
+            <legend>XToys Configuration</legend>
+            <label for="websocketInput">WebSocket: <input type="text" aria-autocomplete="none" id="websocketInput" placeholder="From xtoys custom toy config."></label><br/>
+            <label for="tokenInput">Token: <input type="text" aria-autocomplete="none" id="tokenInput" placeholder="From xtoys custom toy config." ></label><br/>
+
+        </fieldset>
+        <fieldset>
+            <legend>Tasmota Configuration</legend>
+            <label for="tasmotaIpInput">IP-Address: <input type="text" aria-autocomplete="none" id="tasmotaIpInput" placeholder="eg. 192.168.0.12"></label><br/>
+            <label for="tasmotaUserInput">User (optional):<input type="text" aria-autocomplete="none" id="tasmotaUserInput" placeholder="(optional)"></label><br/>
+            <label for="tasmotaPasswordInput">Password (optional):<input type="password" aria-autocomplete="none" id="tasmotaPasswordInput" placeholder="(optional)"></label><br/>
         </fieldset>
 
     </div>
 
     <script>
 
-        let {websocket, token, tasmotaIp} = JSON.parse(window.localStorage.getItem('config') || '{}');
+        let {websocket, token, tasmotaIp, tasmotaUser, tasmotaPassword} = JSON.parse(window.localStorage.getItem('config') || '{}');
+        createWakeLock();
 
         document.getElementById('websocketInput').value = websocket || '';
         document.getElementById('tokenInput').value = token || '';
         document.getElementById('tasmotaIpInput').value = tasmotaIp || '';
+        document.getElementById('tasmotaUserInput').value = tasmotaUser || '';
+        document.getElementById('tasmotaPasswordInput').value = tasmotaPassword || '';
 
         document.getElementById('websocketInput').addEventListener('change', (e) => {
             websocket = e.target.value;
@@ -37,6 +47,15 @@
             onConfigurationChange();
         });
 
+        document.getElementById('tasmotaUserInput').addEventListener('change', (e) => {
+            tasmotaUser = e.target.value;
+            onConfigurationChange();
+        });
+        document.getElementById('tasmotaPasswordInput').addEventListener('change', (e) => {
+            tasmotaPassword = e.target.value;
+            onConfigurationChange();
+        });
+
         /** @type {WebSocket} **/
         let socket = undefined;
 
@@ -44,7 +63,7 @@
 
         async function onConfigurationChange() {
 
-            window.localStorage.setItem('config', JSON.stringify({ websocket, token, tasmotaIp }))
+            window.localStorage.setItem('config', JSON.stringify({ websocket, token, tasmotaIp, tasmotaUser, tasmotaPassword }))
 
             if (socket !== undefined) {
                 socket.close();
@@ -53,6 +72,7 @@
             socket = new WebSocket(`wss://webhook.xtoys.app/${websocket}?token=${token}`);
 
             socket.addEventListener('message',(msg) => {
+                console.info('received xtoys message', msg);
                 const data = JSON.parse(msg.data);
                 onMessage(data);
             });
@@ -61,19 +81,39 @@
 
 
         async function onMessage(data) {
-            console.info(data);
             if (data.errorCode) {
                 throw new Error(`${data.error} (${data.errorCode}): ${data.errorMessage}`);
             }
-            callTasmota();
-        }
-
-        async function callTasmota() {
-            const r = await fetch(`http://${tasmotaIp}/cm?cmnd=Power%20TOGGLE`, { method: 'GET', mode: 'no-cors', credentials: 'omit', cache: "no-cache", referrerPolicy: 'no-referrer'});
+            callTasmota(data);
 
         }
 
+        async function callTasmota(data) {
+            if (data.cmnd) {
+                const url = `http://${tasmotaIp}/cm?cmnd=${data.cmnd}${(tasmotaUser)?`&user=${tasmotaUser}`:''}${(tasmotaPassword)?`&password=${tasmotaPassword}`:''}`;
+                console.log(`Calling tasmota web-api: GET ${url}`);
+                await fetch(url, { method: 'GET', mode: 'no-cors', credentials: 'omit', cache: "no-cache", referrerPolicy: 'no-referrer'});
+            }
+        }
 
+        async function createWakeLock() {
+            const wakeLockElement = document.getElementById('wakeLockStatus');
+            try {
+                wakeLock = await navigator.wakeLock.request('screen');
+                wakeLockElement.textContent = 'Wake Lock is active!';
+
+                wakeLock.addEventListener('release', () => {
+                    // the wake lock has been released
+                    wakeLockElement.textContent = 'Wake Lock has been released. Please reload the site!';
+                });
+
+            } catch (err) {
+                // The Wake Lock request has failed - usually system related, such as battery.
+                wakeLockElement.textContent = `${err.name}, ${err.message}`;
+            }
+
+
+        }
 
     </script>
   </body>
